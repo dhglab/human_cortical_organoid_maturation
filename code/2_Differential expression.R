@@ -9,7 +9,7 @@ load(file.path(output_dir,"processed_data.rdata"))
 datExpr.lt <- DGEList(datExpr)
 datExpr.lt <- calcNormFactors(datExpr.lt, method = "TMM")
 
-design <- "~ 0 +  Day.grouped  + batch + ethnicityPC1 + ethnicityPC2 + SeqPC1 + SeqPC2 + SeqPC3 + SeqPC4 + SeqPC5"
+design <- "~ 0 +  Day.grouped  + batch + ancestryPC1 + ancestryPC2 + SeqPC1 + SeqPC2 + SeqPC3 + SeqPC4 + SeqPC5"
 
 mod <- model.matrix(as.formula(design),data = datMeta)
 colnames(mod) <- make.names(colnames(mod))
@@ -52,29 +52,33 @@ comparisons <- c("Day.grouped200-Day.grouped025",
                  "Day.grouped400-Day.grouped200")
 
 # fgsea -----------------------------------------------------------------------------------------------------------
-
-library(biomaRt)
-library(fgsea)
-library(tidytext)
-human_mart = useMart("ensembl",dataset = "hsapiens_gene_ensembl")
-getinfo <- c( "ensembl_gene_id", "entrezgene_id")
-geneDat <- getBM(attributes = getinfo,filters = "ensembl_gene_id",
-                 values = rownames(datExpr_reg_batch),mart = human_mart)
-go_pathways <- gmtPathways("/Users/aarongordon/Aaron/Databases/GSEA/v7/c5.all.v7.0.entrez.gmt")
-
-
-fgsea_res <- map(hcs_lt_voom[comparisons], function(de){
-  de_ranked <- de %>%
-    rownames_to_column("ensembl_gene_id") %>%
-    arrange(logFC) %>%
-    
-    left_join(geneDat, by = "ensembl_gene_id") %>%
-    dplyr::select(entrezgene_id,logFC) %>%
-    drop_na()
-  ranked_stat <- de_ranked$logFC
-  names(ranked_stat) <- de_ranked$entrezgene_id
-  ranked_stat <- ranked_stat[!duplicated( names(ranked_stat))]
+#The data for GSEA needs to be downloaded from: http://www.gsea-msigdb.org/gsea/msigdb/collections.jsp
+# The annontation set and version used in the paper was c5.all.v7.0.entrez.gmt
+# put it in the data folder
+if(file.exists(file.path("data","c5.all.v7.0.entrez.gmt"))){
+  library(biomaRt)
+  library(fgsea)
+  library(tidytext)
+  human_mart = useMart("ensembl",dataset = "hsapiens_gene_ensembl")
+  getinfo <- c( "ensembl_gene_id", "entrezgene_id")
+  geneDat <- getBM(attributes = getinfo,filters = "ensembl_gene_id",
+                   values = rownames(datExpr_reg_batch),mart = human_mart)
+  go_pathways <- gmtPathways("/Users/aarongordon/Aaron/Databases/GSEA/v7/c5.all.v7.0.entrez.gmt")
   
-  fgseaRes <- fgsea(go_pathways, stats = ranked_stat, nperm = 1000000,minSize = 30, maxSize = 500)
-})
-save(fgsea_res, file = file.path(output_dir, "fgsea_results.rdata"))
+  
+  fgsea_res <- map(hcs_lt_voom[comparisons], function(de){
+    de_ranked <- de %>%
+      rownames_to_column("ensembl_gene_id") %>%
+      arrange(logFC) %>%
+      
+      left_join(geneDat, by = "ensembl_gene_id") %>%
+      dplyr::select(entrezgene_id,logFC) %>%
+      drop_na()
+    ranked_stat <- de_ranked$logFC
+    names(ranked_stat) <- de_ranked$entrezgene_id
+    ranked_stat <- ranked_stat[!duplicated( names(ranked_stat))]
+    
+    fgseaRes <- fgsea(go_pathways, stats = ranked_stat, nperm = 1000000,minSize = 30, maxSize = 500)
+  })
+  save(fgsea_res, file = file.path(output_dir, "fgsea_results.rdata"))
+}
